@@ -219,9 +219,13 @@ kissdb_open(read_and_parse_hash_table, KISSDB, HashPoint) ->
 				end;
 			eof -> 
 %% There is no one hash table in file, create one
-				{ok, Offset} = file:position(KISSDB#kissdb.file, eof), 
-				 ok = kissdb_fill_file(KISSDB, KISSDB#kissdb.hash_table_size * ?UINT32_SIZE),			
-				{ok, KISSDB}
+				if 
+					KISSDB#kissdb.num_hash_tables == 0 ->
+							{ok, Offset} = file:position(KISSDB#kissdb.file, eof), 
+				 			ok = kissdb_fill_file(KISSDB, KISSDB#kissdb.hash_table_size * ?UINT32_SIZE),			
+							{ok, KISSDB};
+					true -> {ok, KISSDB}
+				end
 	end.
 
 
