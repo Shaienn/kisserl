@@ -8,7 +8,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -record(demo_packet, {sulsid=null, operation_code=null, balance=null, is_blocked=0}).
--record(kissdb_open_param, {filepath=null, mode=null, version=null, sub_version=null, hash_table_size = 128, key_size=null, value_size=null}).
+-record(kissdb_open_param, {filepath=null, mode=null, version=null, hash_table_size = 128, key_size=null, value_size=null}).
 
 all() ->
   [
@@ -31,7 +31,7 @@ end_per_suite(Config) ->
   Config.
 	
 kisserl_test(Config) ->
-	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db2", version = 3, sub_version = 2, key_size = 4, value_size = 25},
+	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db2", version = 3, key_size = 4, value_size = 25},
   	io:format("Config: ~p~n", [Config]),
   	{ok, KISSDB} = kisserl:kissdb_open(Param),
 	{ok, KISSDB2} = kisserl:kissdb_put(KISSDB, 12345, <<"test1">>),

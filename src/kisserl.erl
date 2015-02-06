@@ -9,8 +9,8 @@
 %% ====================================================================
 -export([kissdb_open/1,test/0, kissdb_close/1, kissdb_put/3, kissdb_get/2]).
 
--record(kissdb, {current_operation=null, hash_table_size=null, key_size=null, value_size=null, hash_table_size_bytes=null, num_hash_tables=null, version=null, sub_version=null, hash_tables=null, hash_tables_offsets=null, file=null}).
--record(kissdb_open_param, {filepath=null, mode=null, version=null, sub_version=null, hash_table_size = 128, key_size=null, value_size=null}).
+-record(kissdb, {current_operation=null, hash_table_size=null, key_size=null, value_size=null, hash_table_size_bytes=null, num_hash_tables=null, version=null, hash_tables=null, hash_tables_offsets=null, file=null}).
+-record(kissdb_open_param, {filepath=null, mode=null, version=null, hash_table_size = 128, key_size=null, value_size=null}).
 
 -define(KISSDB_VERSION, 2).
 -define(KISSDB_HEADER_SIZE, 18).
@@ -38,7 +38,6 @@ kissdb_close(KISSDB) ->
 %% --------------------------------------------------------------------
 kissdb_get(looking_for_key, KISSDB, Key) when 
   												KISSDB#kissdb.file /= null, 
-												KISSDB#kissdb.sub_version /= null,
 												KISSDB#kissdb.version /= null,
 												KISSDB#kissdb.num_hash_tables /= null,
 												KISSDB#kissdb.hash_table_size_bytes /= null,
@@ -61,7 +60,6 @@ kissdb_get(looking_for_key, KISSDB, Key) when
 %% --------------------------------------------------------------------
 kissdb_put(looking_for_key, KISSDB, Key, Value) when 
   												KISSDB#kissdb.file /= null, 
-												KISSDB#kissdb.sub_version /= null,
 												KISSDB#kissdb.version /= null,
 												KISSDB#kissdb.num_hash_tables /= null,
 												KISSDB#kissdb.hash_table_size_bytes /= null,
@@ -131,8 +129,7 @@ kissdb_open(create_header, Param, KISSDB) ->
 		{ok, Offset} ->
 				Header_kdb = <<"KDB">>,
 				Header_kissdb_ver = element_to_binary(?KISSDB_VERSION, 1),
-				Version = element_to_binary(Param#kissdb_open_param.version, 1),
-				SubVersion = element_to_binary(Param#kissdb_open_param.sub_version, 1),
+				Version = element_to_binary(Param#kissdb_open_param.version, 2),
 				HashTableSize = element_to_binary(Param#kissdb_open_param.hash_table_size, 4),
 				KeySize = element_to_binary(Param#kissdb_open_param.key_size, 4),
 				ValueSize = element_to_binary(Param#kissdb_open_param.value_size, 4),		
@@ -140,7 +137,6 @@ kissdb_open(create_header, Param, KISSDB) ->
 				HeaderBin = <<Header_kdb/binary, 
 							  Header_kissdb_ver/binary, 
 							  Version/binary, 
-							  SubVersion/binary, 
 							  HashTableSize/binary, 
 							  KeySize/binary, 
 							  ValueSize/binary>>,
@@ -149,7 +145,6 @@ kissdb_open(create_header, Param, KISSDB) ->
 				io:format("-> ~p~n", [HeaderBin]),
 				kissdb_open(create_hash_table, Param, KISSDB#kissdb{
 																		version=Param#kissdb_open_param.version, 
-																		sub_version=Param#kissdb_open_param.sub_version, 
 																		hash_table_size=Param#kissdb_open_param.hash_table_size, 
 																		key_size=Param#kissdb_open_param.key_size,
 																		value_size=Param#kissdb_open_param.value_size,
@@ -165,15 +160,13 @@ kissdb_open(read_header, Param, KISSDB) ->
 			case file:read(KISSDB#kissdb.file, ?KISSDB_HEADER_SIZE) of
 				{ok, <<Header_kdb:3/binary,
 					   Header_kissdb_ver:1/binary,
-					   Version:1/little-unsigned-integer-unit:8,
-					   SubVersion:1/little-unsigned-integer-unit:8,
+					   Version:2/little-unsigned-integer-unit:8,
 					   HashTableSize:4/little-unsigned-integer-unit:8, 
 					   KeySize:4/little-unsigned-integer-unit:8, 
 				       ValueSize:4/little-unsigned-integer-unit:8>>
 					   } ->
 					kissdb_open(create_hash_table, Param, KISSDB#kissdb{
 																		version=Version, 
-																		sub_version=SubVersion, 
 																		hash_table_size=HashTableSize, 
 																		key_size=KeySize,
 																		value_size=ValueSize,
