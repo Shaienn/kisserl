@@ -67,6 +67,7 @@ kissdb_put(looking_for_key, KISSDB, Key, Value) when
 												KISSDB#kissdb.key_size /= null, 
 												KISSDB#kissdb.hash_table_size /= null ->
 	HashPoint = kissdb_hash(Key, KISSDB#kissdb.key_size) rem KISSDB#kissdb.hash_table_size,
+	
 	case kissdb_check_hashtable_for_key(KISSDB, HashPoint, Key) of 
 		{empty, EmptyHashPoint, NewKISSDB} -> 
 			io:format("EmptyHashPoint -> ~p~n", [EmptyHashPoint]),
@@ -217,7 +218,9 @@ kissdb_open(read_and_parse_hash_table, KISSDB, HashPoint) ->
 										  }}
 				end;
 			eof -> 
-				io:format("Eof: ~n"),
+%% There is no one hash table in file, create one
+				{ok, Offset} = file:position(KISSDB#kissdb.file, eof), 
+				 ok = kissdb_fill_file(KISSDB, KISSDB#kissdb.hash_table_size * ?UINT32_SIZE),			
 				{ok, KISSDB}
 	end.
 
@@ -346,14 +349,13 @@ element_to_binary(Element, MaxSize) when is_integer(Element) ->
 	end.
 										
 expand_binary(Binary, Step) when is_binary(Binary), Step > 0 ->
-	io:format("B: ~p, S: ~p~n", [Binary, Step]),
 	expand_binary(<<Binary/binary, 0>>, Step - 1);
 
 expand_binary(Binary, 0) when is_binary(Binary) -> 
 	Binary.
 
 test() -> 
-	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db", version = 3, sub_version = 2, key_size = 4, value_size = 25},
+	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db", version = 3, key_size = 4, value_size = 25},
 	{ok, KISSDB} = kissdb_open(Param),
 	io:format("KISSDB: ~p~n", [KISSDB]),
 	{ok, NewKISSDB1} = kissdb_put(KISSDB, 12345, "test1"),
