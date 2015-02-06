@@ -1,0 +1,13 @@
+{application, kisserl,
+ [
+  {description, "Fill in description of the project here."},
+  {vsn, "0.1.0"},
+  {modules, [kisserl]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { kisserl, []}},
+  {env, []}
+ ]}.
