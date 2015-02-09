@@ -7,7 +7,7 @@
 %% ====================================================================
 %% API functions
 %% ====================================================================
--export([kissdb_open/1,test/0, kissdb_close/1, kissdb_put/3, kissdb_get/2]).
+-export([kissdb_open/1,test/0, kissdb_close/1, kissdb_put/3, kissdb_get/2, kissdb_iterator_next/2, kissdb_apply/2]).
 
 -record(kissdb, {current_operation=null, hash_table_size=null, key_size=null, value_size=null, hash_table_size_bytes=null, num_hash_tables=null, version=null, hash_tables=null, hash_tables_offsets=null, file=null}).
 -record(kissdb_open_param, {filepath=null, mode=null, version=null, hash_table_size = 128, key_size=null, value_size=null}).
@@ -33,6 +33,44 @@ kissdb_get(KISSDB, Key) ->
 
 kissdb_close(KISSDB) ->
 	ok = file:close(KISSDB#kissdb.file).
+
+kissdb_iterator_next(KISSDB, StartIndex) when  
+	StartIndex =< (KISSDB#kissdb.hash_table_size * (KISSDB#kissdb.num_hash_tables + 1))->
+		case array:get(StartIndex, KISSDB#kissdb.hash_tables) of
+			0 ->
+				kissdb_iterator_next(KISSDB, StartIndex + 1);
+			Value ->
+				{ok, Offset} = file:position(KISSDB#kissdb.file, {bof, Value}),
+				{ok, Offset, StartIndex}
+		end;
+	
+kissdb_iterator_next(KISSDB, StartIndex) -> end_of_table.
+	
+
+%% Apply one table to another. Means replace values from dest table by values from src table 
+%% -------------------------------------------------------------------- 
+
+kissdb_apply(KISSDB_dest, KISSDB_src) when
+  										KISSDB_dest#kissdb.value_size == KISSDB_src#kissdb.value_size, 
+										KISSDB_dest#kissdb.key_size	== KISSDB_src#kissdb.key_size ->
+	{ok, NewKISSDB_dest} = kissdb_apply_loop(KISSDB_dest, KISSDB_src, 0).
+ 
+kissdb_apply_loop(KISSDB_dest, KISSDB_src, StartIndex) ->
+	case kissdb_iterator_next(KISSDB_src, StartIndex) of
+		{ok, Offset, CurStartIndex} ->
+					{ok, Key_bin} = file:read(KISSDB_src#kissdb.file, KISSDB_src#kissdb.key_size),
+					{ok, Value_bin} = file:read(KISSDB_src#kissdb.file, KISSDB_src#kissdb.value_size),
+					io:format("Key: ~p Val: ~p~n", [Key_bin,Value_bin]),
+					{ok, NewKISSDB_dest} = kissdb_put(KISSDB_dest, Key_bin, Value_bin),
+					kissdb_apply_loop(NewKISSDB_dest, KISSDB_src, CurStartIndex + 1);
+			end_of_table ->
+  					{ok, KISSDB_dest}
+   end.
+
+%% Iterate
+%% --------------------------------------------------------------------
+
+
 
 %% Get 
 %% --------------------------------------------------------------------
@@ -117,7 +155,6 @@ kissdb_open(check_header, Param, KISSDB) ->
 				kissdb_open(read_header, Param, KISSDB);
 		{ok, Offset} ->
 %% No header 
-		 		io:format("Offset -> ~p~n", [Offset]),
 				kissdb_open(create_header, Param, KISSDB);				
 		{error, Reason} ->
 %% No header 
@@ -218,9 +255,9 @@ kissdb_open(read_and_parse_hash_table, KISSDB, HashPoint) ->
 										  }}
 				end;
 			eof -> 
-%% There is no one hash table in file, create one
 				if 
 					KISSDB#kissdb.num_hash_tables == 0 ->
+						%% There is no one hash table in file, create one
 							{ok, Offset} = file:position(KISSDB#kissdb.file, eof), 
 				 			ok = kissdb_fill_file(KISSDB, KISSDB#kissdb.hash_table_size * ?UINT32_SIZE),			
 							{ok, KISSDB};
@@ -325,7 +362,6 @@ element_to_binary(Element, MaxSize) when is_list(Element) ->
 		Element_size > MaxSize ->
 			binary_part(Element_bin, {Element_size, -MaxSize});
 		Element_size < MaxSize ->
-			io:format("elem_size: ~p, max_size: ~p~n", [Element_size, MaxSize]),
 			expand_binary(Element_bin, MaxSize - Element_size);
 		true -> Element_bin
 	end;
@@ -359,7 +395,7 @@ expand_binary(Binary, 0) when is_binary(Binary) ->
 	Binary.
 
 test() -> 
-	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db", version = 3, key_size = 4, value_size = 25},
+	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./database", version = 3, key_size = 4, value_size = 25},
 	{ok, KISSDB} = kissdb_open(Param),
 	io:format("KISSDB: ~p~n", [KISSDB]),
 	{ok, NewKISSDB1} = kissdb_put(KISSDB, 12345, "test1"),
@@ -367,6 +403,10 @@ test() ->
     {ok, NewKISSDB3} = kissdb_put(NewKISSDB2, 12300, "none3"),
 	Res = kissdb_get(NewKISSDB3, 12301), 
 	io:format("Res: ~p~n", [Res]),
+	
+	Res2 = kissdb_iterator_next(NewKISSDB3, 0),
+	io:format("Res2: ~p~n", [Res2]),
+
 	kissdb_close(NewKISSDB3).
 	
 	

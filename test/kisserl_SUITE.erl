@@ -12,7 +12,8 @@
 
 all() ->
   [
-    kisserl_test
+    kisserl_test,
+	iterator_test
   ].
 
 suite() ->
@@ -31,7 +32,7 @@ end_per_suite(Config) ->
   Config.
 	
 kisserl_test(Config) ->
-	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db2", version = 3, key_size = 4, value_size = 25},
+	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db1", version = 3, key_size = 4, value_size = 5},
   	io:format("Config: ~p~n", [Config]),
   	{ok, KISSDB} = kisserl:kissdb_open(Param),
 	{ok, KISSDB2} = kisserl:kissdb_put(KISSDB, 12345, <<"test1">>),
@@ -41,8 +42,32 @@ kisserl_test(Config) ->
 	{ok, Key2_bin, Value2_bin} = kisserl:kissdb_get(KISSDB3, 11111),
 	?assertEqual(<<"test2">>, Value2_bin),
 	ok = kisserl:kissdb_close(KISSDB).
+
+iterator_test(Config) ->
+	Param = #kissdb_open_param{mode = [write, read, binary], filepath="./db2", version = 3, key_size = 4, value_size = 5},
+	{ok, KISSDB} = kisserl:kissdb_open(Param),
+	{ok, KISSDB2} = kisserl:kissdb_put(KISSDB, 1, <<"test1">>),
+	{ok, KISSDB3} = kisserl:kissdb_put(KISSDB2, 2, <<"test2">>),
+	{ok, KISSDB4} = kisserl:kissdb_put(KISSDB3, 3, <<"test3">>),
+	{ok, KISSDB5} = kisserl:kissdb_put(KISSDB4, 4, <<"test4">>),
+	{ok, KISSDB6} = kisserl:kissdb_put(KISSDB5, 5, <<"test5">>),
+	iterate_it(KISSDB6, 0).
 	
-	
+
+iterate_it(KISSDB, StartIndex) ->
+	case kisserl:kissdb_iterator_next(KISSDB, StartIndex) of 
+		{ok, Offset, StartIndex2} -> 
+				io:format("Offset: ~p~n", [Offset]),
+				io:format("S1: ~p, S2: ~p~n", [StartIndex, StartIndex2]),
+				iterate_it(KISSDB, StartIndex2 + 1);
+		end_of_table ->
+				{ok, end_of_table}
+	end.
+
+
+
+
+
 
 
 
