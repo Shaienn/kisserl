@@ -60,7 +60,6 @@ kissdb_apply_loop(KISSDB_dest, KISSDB_src, StartIndex) ->
 		{ok, Offset, CurStartIndex} ->
 					{ok, Key_bin} = file:read(KISSDB_src#kissdb.file, KISSDB_src#kissdb.key_size),
 					{ok, Value_bin} = file:read(KISSDB_src#kissdb.file, KISSDB_src#kissdb.value_size),
-					io:format("Key: ~p Val: ~p~n", [Key_bin,Value_bin]),
 					{ok, NewKISSDB_dest} = kissdb_put(KISSDB_dest, Key_bin, Value_bin),
 					kissdb_apply_loop(NewKISSDB_dest, KISSDB_src, CurStartIndex + 1);
 			end_of_table ->
@@ -107,29 +106,18 @@ kissdb_put(looking_for_key, KISSDB, Key, Value) when
 	HashPoint = kissdb_hash(Key, KISSDB#kissdb.key_size) rem KISSDB#kissdb.hash_table_size,
 	
 	case kissdb_check_hashtable_for_key(KISSDB, HashPoint, Key) of 
-		{empty, EmptyHashPoint, NewKISSDB} -> 
-			io:format("EmptyHashPoint -> ~p~n", [EmptyHashPoint]),
-			
+		{empty, EmptyHashPoint, NewKISSDB} -> 			
 			{ok, EndOffset} = file:position(NewKISSDB#kissdb.file, eof),
 %% Write Key and Value into the file  			
 			KeyBin = element_to_binary(Key, NewKISSDB#kissdb.key_size),
-			io:format("KeyBin -> ~p~n", [KeyBin]),
 			ok = file:write(NewKISSDB#kissdb.file, KeyBin),
-			io:format("Value -> ~p, Size: ~p~n", [Value, NewKISSDB#kissdb.value_size]),
 			ValueBin = element_to_binary(Value, NewKISSDB#kissdb.value_size),
-			io:format("ValueBin -> ~p~n", [ValueBin]),
 			ok = file:write(NewKISSDB#kissdb.file, ValueBin),	
-			
 			NewHashTables = array:set(EmptyHashPoint, EndOffset, NewKISSDB#kissdb.hash_tables),		
 			HashTable = EmptyHashPoint div NewKISSDB#kissdb.hash_table_size,
-			
-			io:format("HashTable -> ~p~n", [HashTable]),
 			HashTableOffset = array:get(HashTable, NewKISSDB#kissdb.hash_tables_offsets),
-			io:format("HashTableOffset -> ~p~n", [HashTableOffset]),
-			{ok, HashPointOffset} = file:position(NewKISSDB#kissdb.file, {bof, HashTableOffset + (HashPoint*?UINT32_SIZE)}),
-			
+			{ok, HashPointOffset} = file:position(NewKISSDB#kissdb.file, {bof, HashTableOffset + (HashPoint*?UINT32_SIZE)}),		
 			EndOffset_bin = element_to_binary(EndOffset, ?UINT32_SIZE),
-			io:format("EndOffset_bin -> ~p~n", [EndOffset_bin]),
 			ok = file:write(NewKISSDB#kissdb.file, EndOffset_bin),
 			{ok, NewKISSDB#kissdb{hash_tables = NewHashTables}};
 		{value, Offset} -> 
@@ -180,7 +168,6 @@ kissdb_open(create_header, Param, KISSDB) ->
 							  ValueSize/binary>>,
 				
 				file:write(KISSDB#kissdb.file, HeaderBin),
-				io:format("-> ~p~n", [HeaderBin]),
 				kissdb_open(create_hash_table, Param, KISSDB#kissdb{
 																		version=Param#kissdb_open_param.version, 
 																		hash_table_size=Param#kissdb_open_param.hash_table_size, 
@@ -203,8 +190,30 @@ kissdb_open(read_header, Param, KISSDB) ->
 					   KeySize:4/little-unsigned-integer-unit:8, 
 				       ValueSize:4/little-unsigned-integer-unit:8>>
 					   } ->
+					
+					
+					
+					if 
+						is_integer(Param#kissdb_open_param.version) -> 
+							
+							%% Write new version to file 
+							
+							{ok, CurrentOffset} = file:position(KISSDB#kissdb.file, cur),
+							io:format("CurrentOffset: ~p~n", [CurrentOffset]),
+							{ok, VersionOffset} = file:position(KISSDB#kissdb.file, {bof, 4}),
+							VersionBin = element_to_binary(Param#kissdb_open_param.version, 2),
+							Res= file:write(KISSDB#kissdb.file, VersionBin),
+							io:format("Res: ~p~n", [Res]),
+							{ok, CurrentOffset} = file:position(KISSDB#kissdb.file, {bof, CurrentOffset}),
+							ResultVersion = Param#kissdb_open_param.version;
+						true ->
+							ResultVersion = Version
+					end,
+					
+					
+					
 					kissdb_open(create_hash_table, Param, KISSDB#kissdb{
-																		version=Version, 
+																		version=ResultVersion, 
 																		hash_table_size=HashTableSize, 
 																		key_size=KeySize,
 																		value_size=ValueSize,
@@ -226,9 +235,7 @@ kissdb_open(read_and_parse_hash_table, KISSDB, HashPoint) ->
 			{ok, Data} -> 
 				DataSize = erlang:byte_size(Data),
 				NextTableOffset_bin = binary_part(Data, {DataSize, -?UINT32_SIZE}),
-				io:format("NextTableOffset_bin: ~p~n", [NextTableOffset_bin]),
 				NextTableOffset_int = binary:decode_unsigned(NextTableOffset_bin, little),		
-				io:format("NextTableOffset_int: ~p~n", [NextTableOffset_int]),
 				HashTable_clean = binary_part(Data, {0, DataSize - ?UINT32_SIZE}),
  				{ok, NewHashPoint, NewArray} = parse_binary_hashtable_to_array(HashTable_clean, 
 																			   HashPoint, 
@@ -247,7 +254,6 @@ kissdb_open(read_and_parse_hash_table, KISSDB, HashPoint) ->
 												 }, 
 									NewHashPoint);
 					true -> 
-						io:format("KISSDB tables: ~p~n", [NewNumHashTables]),
 						{ok, KISSDB#kissdb{
 										   hash_tables = NewArray, 
 										   num_hash_tables = NewNumHashTables,
@@ -271,20 +277,15 @@ kissdb_open(read_and_parse_hash_table, KISSDB, HashPoint) ->
 
 kissdb_check_hashtable_for_key(KISSDB, HashPoint, Key) when 
   HashPoint =< (KISSDB#kissdb.hash_table_size * (KISSDB#kissdb.num_hash_tables+1)) ->
-	io:format("HashPoint -> ~p~n", [HashPoint]),
 	case array:get(HashPoint, KISSDB#kissdb.hash_tables) of 
 		0 ->
-%% Empty slot  		
-			io:format("Empty~n"),		
+%% Empty slot  			
 			{empty, HashPoint, KISSDB};	
 		Value ->
-%% Busy slot, need check  		
-			io:format("Value -> ~p~n", [Value]),	
+%% Busy slot, need check  			
 			{ok, Offset} = file:position(KISSDB#kissdb.file, {bof, Value}),
 			{ok, Key_from_file} = file:read(KISSDB#kissdb.file, KISSDB#kissdb.key_size),
-			io:format("Key_from_file -> ~p~n", [Key_from_file]),
 			Key_bin = element_to_binary(Key, KISSDB#kissdb.key_size),
-			io:format("Key_bin -> ~p~n", [Key_bin]),
 			if 
 				Key_from_file == Key_bin -> 
 %% Our key, offset to replace  					
@@ -300,7 +301,6 @@ kissdb_check_hashtable_for_key(KISSDB, HashPoint, Key) when KISSDB#kissdb.curren
 
 kissdb_check_hashtable_for_key(KISSDB, HashPoint, Key) when KISSDB#kissdb.current_operation == put  -> 
 %% Create new hash table 
-	io:format("New table -> ~p~n", [HashPoint]),
 	{ok, EndOffset} = file:position(KISSDB#kissdb.file, eof),	
 	NewNumHashTables = KISSDB#kissdb.num_hash_tables + 1,
 	NewHashTableOffset = array:set(KISSDB#kissdb.num_hash_tables, EndOffset, KISSDB#kissdb.hash_tables_offsets),
@@ -331,7 +331,6 @@ kissdb_fill_file(KISSDB, 0) -> ok.
 parse_binary_hashtable_to_array(Data, HashPoint, Array) ->
 	case Data of 
 		<<Offset:?UINT32_SIZE/little-unsigned-integer-unit:8, Tail/binary>>-> 
-					io:format("Off: ~p -> ~p~n", [HashPoint, Offset]),
 					NewArray = array:set(HashPoint, Offset, Array),
 					parse_binary_hashtable_to_array(Tail, HashPoint+1, NewArray);
 		Something -> {ok, HashPoint, Array}
@@ -355,7 +354,6 @@ kissdb_check_hash(Hash) ->
 		
 			
 element_to_binary(Element, MaxSize) when is_list(Element) ->	
-	io:format("list to binary~n"),
 	Element_bin = binary:list_to_bin(Element),
 	Element_size = erlang:byte_size(Element_bin),
 	if 
@@ -367,7 +365,6 @@ element_to_binary(Element, MaxSize) when is_list(Element) ->
 	end;
 
 element_to_binary(Element, MaxSize) when is_binary(Element) ->	
-	io:format("binary to binary~n"),
 	Element_size = erlang:byte_size(Element),
 	if 
 		Element_size > MaxSize ->
